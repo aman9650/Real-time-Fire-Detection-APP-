@@ -76,7 +76,7 @@ frame_placeholder = tab3.empty()
 
 # Function to capture video
 def capture_video(stop_signal):
-    cap = cv2.VideoCapture(-1)  # 0 is the default camera
+    cap = cv2.VideoCapture(1)  # 0 is the default camera
 
     if not cap.isOpened():
         st.error("Error: Could not open webcam.")
