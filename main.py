@@ -1,5 +1,3 @@
-#2.15.0
-#2.16.1
 import streamlit as st
 import cv2
 import numpy as np
@@ -79,32 +77,25 @@ class FireDetectionProcessor(VideoProcessorBase):
         color = (0, 0, 255) if fire_detected else (0, 255, 0)
         cv2.putText(img, label, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
 
-        return av.VideoFrame.from_ndarray(img, format="bgr24")
+        # Resize frame for display
+        display_frame = cv2.resize(img, (400, 480))
 
-# Start the WebRTC stream
+        return av.VideoFrame.from_ndarray(display_frame, format="bgr24")
+
+# Start the WebRTC stream with reduced canvas size
 webrtc_ctx = webrtc_streamer(
     key="fire-detection",
     mode=WebRtcMode.SENDRECV,
     rtc_configuration=RTC_CONFIGURATION,
     video_processor_factory=FireDetectionProcessor,
     media_stream_constraints={
-        "video": True,
+        "video": {
+            "width": {"ideal": 640},
+            "height": {"ideal": 480},
+        },
         "audio": False,
     },
     async_processing=True,
-)
-
-# Reduce the size of the video display window using CSS
-tab3.markdown(
-    """
-    <style>
-    .css-1v0mbdj.e1fqkh3o2 {
-        width: 640px;
-        height: 480px;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
 )
 
 # Check if the WebRTC context is ready and displaying video
