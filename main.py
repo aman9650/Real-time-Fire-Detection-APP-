@@ -3,20 +3,20 @@
 import streamlit as st
 import cv2
 import numpy as np
-import tensorflow as tf
 from tensorflow.keras.models import load_model
 from PIL import Image
+from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, WebRtcMode, RTCConfiguration
+import av
 
 st.set_page_config(layout="wide")
 st.title("Real-time Fire Detection APP 🔥")
-## -------------------------------------------------------
-# Tab 1
-tab1, tab2, tab3= st.tabs(["Home", "🗃 Data", "Model"])
 
-# Display content in Tab 1
+# Tabs
+tab1, tab2, tab3 = st.tabs(["Home", "🗃 Data", "Model"])
+
+# Tab 1: Introduction
 tab1.markdown("""
-###
-Welcome to the Real-time Fire Detection Application!
+### Welcome to the Real-time Fire Detection Application!
 This application uses advanced deep learning and computer vision to detect fire in real-time, providing a crucial tool for enhancing safety in various settings. By leveraging a sophisticated model trained on diverse datasets, the app ensures high accuracy in identifying fire hazards.
 
 ### Key Features:
@@ -27,12 +27,7 @@ This application uses advanced deep learning and computer vision to detect fire 
 You can find the source code in the [GitHub Repository🚀](https://github.com/aman9650/Skin_cancer_detection)
 """)
 
-
-
-### ------------------------------------------------------------
-# Tab 2
-
-# Display content in Tab 2
+# Tab 2: Dataset
 tab2.markdown("""
 ### Dataset 📈:
 The model was trained using a dataset of fire and non-fire images sourced from [Kaggle](https://www.kaggle.com/datasets/phylake1337/fire-dataset). This diverse dataset ensures the model can reliably distinguish between fire and non-fire scenarios.
@@ -41,91 +36,79 @@ Below are examples of images used in the training dataset:
 
 **Fire Image**:
 """)
-
-# Display an example fire image
 fire_image = Image.open('fire.103.png')
-tab2.image(fire_image, caption='Example Fire Image', width=500)
+tab2.image(fire_image, caption='Example Fire Image', width=300)
 
 tab2.markdown("""
 **Non-Fire Image**:
 """)
-
-# Display an example non-fire image
 non_fire_image = Image.open('non_fire.103.png')
-tab2.image(non_fire_image, caption='Example Non-Fire Image', width=500)
+tab2.image(non_fire_image, caption='Example Non-Fire Image', width=300)
 
-
-
-
-## ------------------------------------------------------
-
-# Tab3
-
-
-# Load your trained model
+# Tab 3: Model
 model = load_model('model.h5')
-
-# Set the title of the app
 tab3.markdown("""
 ### Click to start the model 🤖---->
 """)
 
+# WebRTC configuration
+RTC_CONFIGURATION = RTCConfiguration({
+    "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]
+})
 
-# Placeholder for video frames
-frame_placeholder = tab3.empty()
+# Define VideoProcessor to handle frames and make predictions
+class FireDetectionProcessor(VideoProcessorBase):
+    def __init__(self):
+        self.model = model
 
-# Function to capture video
-def capture_video(stop_signal):
-    cap = cv2.VideoCapture(1)  # 0 is the default camera
+    def recv(self, frame):
+        img = frame.to_ndarray(format="bgr24")
 
-    if not cap.isOpened():
-        st.error("Error: Could not open webcam.")
-        return
-
-    while not st.session_state[stop_signal]:
-        ret, frame = cap.read()
-        if not ret:
-            st.error("Failed to grab frame.")
-            break
-
-        # Preprocess the frame for your model
+        # Preprocess the frame for the model
         input_size = (150, 150)
-        resized_frame = cv2.resize(frame, input_size)
+        resized_frame = cv2.resize(img, input_size)
         normalized_frame = resized_frame / 255.0
-        input_frame = np.expand_dims(normalized_frame, axis=0)  # Add batch dimension
+        input_frame = np.expand_dims(normalized_frame, axis=0)
 
         # Make prediction
-        prediction = model.predict(input_frame)
-        fire_detected = prediction[0][0] > 0.5  # Assuming binary classification with a threshold
+        prediction = self.model.predict(input_frame)
+        fire_detected = prediction[0][0] > 0.5
 
         # Display the result
-        if fire_detected:
-            label = "Fire Detected"
-            color = (0, 0, 255)  # Red
-        else:
-            label = "No Fire"
-            color = (0, 255, 0)  # Green
+        label = "Fire Detected" if fire_detected else "No Fire"
+        color = (0, 0, 255) if fire_detected else (0, 255, 0)
+        cv2.putText(img, label, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
 
-        # Put label on the frame
-        cv2.putText(frame, label, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
+        return av.VideoFrame.from_ndarray(img, format="bgr24")
 
-        # Display the resulting frame in Streamlit
-        frame_placeholder.image(frame, channels="BGR")
+# Start the WebRTC stream
+webrtc_ctx = webrtc_streamer(
+    key="fire-detection",
+    mode=WebRtcMode.SENDRECV,
+    rtc_configuration=RTC_CONFIGURATION,
+    video_processor_factory=FireDetectionProcessor,
+    media_stream_constraints={
+        "video": True,
+        "audio": False,
+    },
+    async_processing=True,
+)
 
-    # Release the webcam
-    cap.release()
-    frame_placeholder.empty()  # Clear the frame placeholder when done
+# Reduce the size of the video display window using CSS
+tab3.markdown(
+    """
+    <style>
+    .css-1v0mbdj.e1fqkh3o2 {
+        width: 640px;
+        height: 480px;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
-# Initialize session state
-if 'stop_signal' not in st.session_state:
-    st.session_state.stop_signal = False
-
-# Start button
-if tab3.button("Start Fire Detection"):
-    st.session_state.stop_signal = False
-    capture_video('stop_signal')
-
-# Stop button
-if tab3.button("Stop Fire Detection"):
-    st.session_state.stop_signal = True
-
+# Check if the WebRTC context is ready and displaying video
+if webrtc_ctx.video_processor:
+    tab3.markdown("### Video is running. Check the labels on the video to see detection results.")
+else:
+    tab3.markdown("### Click on 'Start' to begin video streaming and fire detection.")
